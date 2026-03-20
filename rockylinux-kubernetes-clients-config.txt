@@ -1,0 +1,292 @@
+```bash
+
+# Worker list - users
+k8worker011 - worker1 - 192.168.122.111/24
+k8worker022 
+k8worker033
+k8worker044
+k8worker055
+k8worker066
+
+# change user
+su - username 
+
+# passwd for all users
+k8CIcd/*
+
+# set hungarian keyboard layout
+
+localectl list-keymaps
+setkeymap hu
+sudo loadkeys hu
+sudo nano /etc/vconsole.conf
+KEYMAP=hu
+
+# check and change username
+
+cat /etc/passwd
+sudo usermod -l oldname newname
+
+# add user to sudo 
+
+su - 
+visudo
+username ALL=(ALL) NOPASSWD:ALL
+vi
+
+# VERIFY SSH IS READY
+
+# Check SSH service is running (run on each node)
+sudo systemctl status sshd
+
+# Enable SSH to start on boot (if not already)
+sudo systemctl enable sshd
+
+# If SSH is not running, start it
+sudo systemctl start sshd
+
+# Check SSH is listening on port 22
+sudo ss -tlnp | grep ssh
+
+=====================================================
+# ============================================================================
+# CHECK FIREWALL ALLOWS SSH (if firewalld is enabled)
+# ============================================================================
+
+# Check firewall status
+sudo systemctl status firewalld
+
+# If firewalld is running, allow SSH
+sudo firewall-cmd --permanent --add-service=ssh
+sudo firewall-cmd --reload
+
+
+# Verify SSH is allowed
+sudo firewall-cmd --list-services
+
+
+
+
+# ============================================================================
+# FIXED IP CONFIGURATION FOR KUBERNETES LAB ON KVM/QEMU
+# ============================================================================
+# Network: 192.168.122.0/24
+# Gateway: 192.168.122.1
+# Run on each node individually
+# ============================================================================
+
+# ============================================================================
+# SERVER NODE (Control Plane) - Set to 192.168.122.10
+# ============================================================================
+
+# Get current interface name (from your output: eno1s0)
+nmcli device status
+
+# Set fixed IP for Server
+sudo nmcli con modify "Wired connection 1" \
+  ipv4.method manual \
+  ipv4.addresses "192.168.122.10/24" \
+  ipv4.gateway "192.168.122.1" \
+  ipv4.dns "8.8.8.8,8.8.4.4"
+
+# Apply changeks
+sudo nmcli con down "Wired connection 1"
+sudo nmcli con up "Wired connection 1"
+
+# Verify
+nmcli device show
+ip addr show
+sudo ip addr del <IP-ADRESSE/PREFIXLÃ„NGE> dev <INTERFACE>
+
+# ============================================================================
+# WORKER NODE 1 - Set to 192.168.122.20
+# ============================================================================
+
+sudo nmcli con modify "Wired connection 1" \
+  ipv4.method manual \
+  ipv4.addresses "192.168.122.20/24" \
+  ipv4.gateway "192.168.122.1" \
+  ipv4.dns "8.8.8.8,8.8.4.4"
+
+sudo nmcli con down "Wired connection 1"
+sudo nmcli con up "Wired connection 1"
+
+nmcli device showre
+ ============================================================================
+# VERIFY ON ALL NODES (after setting fixed IPs)
+# ============================================================================
+
+# Check IP is fixed
+ip addr show
+
+# Check connectivity
+ping 192.168.122.1
+ping 8.8.8.8
+
+# Check hostname and IPs together
+hostname -I
+sudo systemctl is-enabled docker
+
+
+
+
+# update all nodes one by one
+
+sudo dnf update -y
+
+sudo dnf install epel-release -y
+
+sudo dnf install podman podman-docker -y
+
+# Enable and start Podman service
+
+sudo systemctl enable podman
+sudo systemctl start podman
+
+# Verify Podman is running
+
+sudo podman --version
+sudo systemctl status podman
+
+
+
+sudo dnf install dockersudo systemctl is-enabled docker
+ -y
+
+# Enable and start Docker service
+sudo systemctl enable dockers
+sudo systemctl start docker
+
+# Verify Docker is running
+sudo docker --version
+sudo systemctl status docker
+
+# ============================================================================
+# STEP 6: Verify both services start at system boot
+# ============================================================================
+
+# Check enabled services
+sudo systemctl is-enabled podman
+sudo systemctl is-enabled docker
+
+# Both should output "enabled"
+
+# ============================================================================
+# STEP 7: Verify container runtime functionality
+# ============================================================================
+
+# Test Podman
+sudo podman run --rm hello-world
+
+# Test Docker (if installed)
+sudo docker run --rm hello-world
+
+#------------SELINUX------------------
+#-------------------------------------
+# Check current SELinux status
+sudo getenforce
+
+# Set to permissive mode (for lab environment)
+sudo setenforce 0
+
+# Make it permanent (edit config, requires reboot to fully apply)
+sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+
+# Verify
+sudo getenforce
+
+# ============================================================================
+# STEP 10: Disable swap (required for Kubernetes)
+# ============================================================================
+
+sudo swapoff -a
+
+# Permanent: comment out swap lines in fstab
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
+
+# Verify no swap
+free -m
+
+# ============================================================================
+# STEP 11: Load required kernel modules for Kubernetes
+# ============================================================================
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+sudo dnf install kernel-modules-extra
+
+# Make permanent
+sudo tee /etc/modules-load.d/kubernetes.conf > /dev/null <<EOF
+overlay
+br_netfilter
+EOF
+
+# ============================================================================
+# STEP 12: Configure sysctl for Kubernetes
+# ============================================================================
+
+sudo tee /etc/sysctl.d/kubernetes.conf > /dev/null <<EOF
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF
+
+# Apply immediately
+sudo sysctl --system
+
+# ============================================================================
+# STEP 13: Configure container runtime (choose one or both)
+# ============================================================================
+
+# For Podman - ensure cgroup v2 support
+sudo mkdir -p /etc/cni/net.d
+sudo tee /etc/cni/net.d/99-loopback.conf > /dev/null <<EOF
+{
+  "cniVersion": "1.0.0",
+  "name": "loopback",
+  "type": "loopback"
+}
+EOF
+
+# For Docker - ensure proper daemon.json
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json > /dev/null <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "5"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+
+# Reload Docker daemon
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+# ============================================================================
+# STEP 14: Final verification before proceeding
+# ============================================================================
+
+echo "=== System Check ==="
+echo "Podman:"
+sudo podman --version
+echo ""
+echo "Docker:"
+sudo docker --version
+echo ""
+echo "SELinux (should be 'permissive'):"
+sudo getenforce
+echo ""
+echo "Swap (should be 0):"
+free -m | grep -i swap
+echo ""
+echo "Kernel modules:"
+lsmod | grep -E 'overlay|br_netfilter'
+echo ""
+echo "All checks complete! Ready for Kubernetes component installation."
+
+```

@@ -1,0 +1,63 @@
+
+sudo dnf install ansible-core -y
+
+Updating Subscription Management repositories.
+Last metadata expiration check: ...
+Dependencies resolved.
+================================================================================
+ Package                  Arch   Version                Repository         Size
+================================================================================
+Installing:
+ ansible-core             noarch 2.16.x-x.el9            rhel-9-appstream   xx M
+Installing dependencies:
+ python3-jinja2           noarch x.x.x-x.el9              rhel-9-appstream   xxx k
+ python3-yaml             x86_64 x.x.x-x.el9              rhel-9-appstream   xxx k
+ ...
+
+Transaction Summary
+================================================================================
+Install  XX Packages
+
+Complete!
+
+ansible --version
+
+ansible [core 2.14.18]
+  config file = /etc/ansible/ansible.cfg
+  configured module search path = ['/home/labex/.ansible/plugins/modules', '/usr/share/ansible/plugins/modules']
+  ansible python module location = /usr/lib/python3.9/site-packages/ansible
+  ansible collection location = /home/labex/.ansible/collections:/usr/share/ansible/collections
+  executable location = /usr/bin/ansible
+  python version = 3.9.21 (main, Feb 10 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)] (/usr/bin/python3)
+  jinja version = 3.1.2
+  libyaml = True
+
+cd /home/labex/project
+ansible localhost -m ping
+
+localhost | SUCCESS => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}
+
+
+ansible localhost -m setup -a "filter=ansible_distribution*"
+
+
+localhost | SUCCESS => {
+    "ansible_facts": {
+        "ansible_distribution": "RedHat",
+        "ansible_distribution_file_parsed": true,
+        "ansible_distribution_file_path": "/etc/redhat-release",
+        "ansible_distribution_file_search_string": "Red Hat",
+        "ansible_distribution_file_variety": "RedHat",
+        "ansible_distribution_major_version": "9",
+        "ansible_distribution_release": "Plow",
+        "ansible_distribution_version": "9.6",
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false
+}

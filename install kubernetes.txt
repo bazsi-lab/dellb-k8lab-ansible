@@ -1,0 +1,448 @@
+
+# ============================================================================
+# KUBERNETES INSTALLATION - COMPLETE & VERIFIED
+# Rocky Linux 9.7 with containerd CRI runtime
+# ============================================================================
+# Run on ALL nodes first (control plane + all workers)
+# Then control plane init and worker joins
+# ============================================================================
+
+# ============================================================================
+# STEP 1: Kernel modules and network configuration (ALL NODES)
+# ============================================================================
+
+# Load br_netfilter kernel module
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+# Verify modules are loaded
+lsmod | grep overlay
+lsmod | grep br_netfilter
+
+# Create sysctl configuration for Kubernetes
+sudo bash -c 'cat > /etc/sysctl.d/kubernetes.conf << EOF
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF'
+
+# Apply sysctl settings immediately
+sudo sysctl --system
+
+# Verify all three settings are 1
+cat /proc/sys/net/bridge/bridge-nf-call-iptables
+cat /proc/sys/net/bridge/bridge-nf-call-ip6tables
+cat /proc/sys/net/ipv4/ip_forward
+
+# ============================================================================
+# STEP 2: Install required system packages (ALL NODES)
+# ============================================================================
+
+# Install conntrack (required by kubeadm)
+sudo dnf install -y conntrack-tools
+
+# Disable firewalld (lab environment)
+sudo systemctl stop firewalld
+sudo systemctl disable firewalld
+
+# Verify firewalld is stopped
+sudo systemctl status firewalld
+
+# ============================================================================
+# STEP 3: Configure hostname resolution (ALL NODES)
+# ============================================================================
+# Add all nodes to /etc/hosts for DNS resolution
+# Replace IP addresses and hostnames with your actual values
+
+sudo bash -c 'cat >> /etc/hosts << EOF
+192.168.122.101 kuberserver1
+192.168.122.111 k8worker011
+192.168.122.122 k8worker022
+192.168.122.133 k8worker033
+192.168.122.144 k8worker044
+192.168.122.155 k8worker055
+192.168.122.166 k8worker066
+EOF'
+
+# Verify hostname resolution
+hostname -I
+hostname -f
+ping -c 1 k8master
+
+# ============================================================================
+# STEP 4: Install containerd container runtime (ALL NODES)
+# ============================================================================
+
+# Add Docker CE repository (containerd is available here)
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+# Install containerd
+sudo dnf install -y containerd.io
+
+# Create containerd config directory
+sudo mkdir -p /etc/containerd
+
+# Generate default containerd configuration
+sudo containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
+
+# Configure containerd to use systemd cgroup driver (required for Kubernetes)
+
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+# Verify the change
+grep SystemdCgroup /etc/containerd/config.toml
+
+# Enable and start containerd
+sudo systemctl daemon-reload
+sudo systemctl enable containerd
+sudo systemctl start containerd
+
+# Verify containerd is running
+sudo systemctl status containerd
+containerd --version
+
+# ============================================================================
+# STEP 5: Install Kubernetes components (ALL NODES)
+# ============================================================================
+
+# Add Kubernetes repository
+sudo bash -c 'cat > /etc/yum.repos.d/kubernetes.repo << EOF
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.31/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.31/rpm/repodata/repomd.xml.key
+EOF'
+
+# Install kubeadm, kubelet, kubectl
+sudo dnf install -y kubeadm kubelet kubectl
+
+# Enable kubelet service (do not start yet - control plane will start it)
+sudo systemctl enable kubelet
+
+# Verify installations
+kubeadm version
+kubelet --version
+kubectl version --client
+
+# ============================================================================
+# STEP 6: Initialize control plane (ONLY ON MASTER: k8master)
+# ============================================================================
+
+# Initialize Kubernetes control plane with containerd CRI socket
+sudo kubeadm init \
+  --pod-network-cidr=192.168.0.0/16 \
+  --cri-socket=unix:///run/containerd/containerd.sock
+-----------------------------------------------------
+-----------------------------------------------------
+[kuberserver1@kuberserver1 ~]$ sudo kubeadm init \
+  --pod-network-cidr=192.168.0.0/16 \
+  --cri-socket=unix:///run/containerd/containerd.sock
+I0308 12:20:33.878496   11908 version.go:261] remote version is much newer: v1.35.2; falling back to: stable-1.31
+[init] Using Kubernetes version: v1.31.14
+[preflight] Running pre-flight checks
+[preflight] Pulling images required for setting up a Kubernetes cluster
+[preflight] This might take a minute or two, depending on the speed of your internet connection
+[preflight] You can also perform this action beforehand using 'kubeadm config images pull'
+W0308 12:20:34.089374   11908 checks.go:843] detected that the sandbox image "" of the container runtime is inconsistent with that used by kubeadm.It is recommended to use "registry.k8s.io/pause:3.10" as the CRI sandbox image.
+[certs] Using certificateDir folder "/etc/kubernetes/pki"
+[certs] Generating "ca" certificate and key
+[certs] Generating "apiserver" certificate and key
+[certs] apiserver serving cert is signed for DNS names [kubernetes kubernetes.default kubernetes.default.svc kubernetes.default.svc.cluster.local kuberserver1] and IPs [10.96.0.1 192.168.122.101]
+[certs] Generating "apiserver-kubelet-client" certificate and key
+[certs] Generating "front-proxy-ca" certificate and key
+[certs] Generating "front-proxy-client" certificate and key
+[certs] Generating "etcd/ca" certificate and key
+[certs] Generating "etcd/server" certificate and key
+[certs] etcd/server serving cert is signed for DNS names [kuberserver1 localhost] and IPs [192.168.122.101 127.0.0.1 ::1]
+[certs] Generating "etcd/peer" certificate and key
+[certs] etcd/peer serving cert is signed for DNS names [kuberserver1 localhost] and IPs [192.168.122.101 127.0.0.1 ::1]
+[certs] Generating "etcd/healthcheck-client" certificate and key
+[certs] Generating "apiserver-etcd-client" certificate and key
+[certs] Generating "sa" key and public key
+[kubeconfig] Using kubeconfig folder "/etc/kubernetes"
+[kubeconfig] Writing "admin.conf" kubeconfig file
+[kubeconfig] Writing "super-admin.conf" kubeconfig file
+[kubeconfig] Writing "kubelet.conf" kubeconfig file
+[kubeconfig] Writing "controller-manager.conf" kubeconfig file
+[kubeconfig] Writing "scheduler.conf" kubeconfig file
+[etcd] Creating static Pod manifest for local etcd in "/etc/kubernetes/manifests"
+[control-plane] Using manifest folder "/etc/kubernetes/manifests"
+[control-plane] Creating static Pod manifest for "kube-apiserver"
+[control-plane] Creating static Pod manifest for "kube-controller-manager"
+[control-plane] Creating static Pod manifest for "kube-scheduler"
+[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
+[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
+[kubelet-start] Starting the kubelet
+[wait-control-plane] Waiting for the kubelet to boot up the control plane as static Pods from directory "/etc/kubernetes/manifests"
+[kubelet-check] Waiting for a healthy kubelet at http://127.0.0.1:10248/healthz. This can take up to 4m0s
+[kubelet-check] The kubelet is healthy after 1.002112334s
+[api-check] Waiting for a healthy API server. This can take up to 4m0s
+[api-check] The API server is healthy after 8.501645989s
+[upload-config] Storing the configuration used in ConfigMap "kubeadm-config" in the "kube-system" Namespace
+[kubelet] Creating a ConfigMap "kubelet-config" in namespace kube-system with the configuration for the kubelets in the cluster
+[upload-certs] Skipping phase. Please see --upload-certs
+[mark-control-plane] Marking the node kuberserver1 as control-plane by adding the labels: [node-role.kubernetes.io/control-plane node.kubernetes.io/exclude-from-external-load-balancers]
+[mark-control-plane] Marking the node kuberserver1 as control-plane by adding the taints [node-role.kubernetes.io/control-plane:NoSchedule]
+[bootstrap-token] Using token: fli9rg.sm2b5tbj3lliv5eg
+[bootstrap-token] Configuring bootstrap tokens, cluster-info ConfigMap, RBAC Roles
+[bootstrap-token] Configured RBAC rules to allow Node Bootstrap tokens to get nodes
+[bootstrap-token] Configured RBAC rules to allow Node Bootstrap tokens to post CSRs in order for nodes to get long term certificate credentials
+[bootstrap-token] Configured RBAC rules to allow the csrapprover controller automatically approve CSRs from a Node Bootstrap Token
+[bootstrap-token] Configured RBAC rules to allow certificate rotation for all node client certificates in the cluster
+[bootstrap-token] Creating the "cluster-info" ConfigMap in the "kube-public" namespace
+[kubelet-finalize] Updating "/etc/kubernetes/kubelet.conf" to point to a rotatable kubelet client certificate and key
+[addons] Applied essential addon: CoreDNS
+[addons] Applied essential addon: kube-proxy
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Alternatively, if you are the root user, you can run:
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 192.168.122.101:6443 --token fli9rg.sm2b5tbj3lliv5eg \
+        --discovery-token-ca-cert-hash sha256:90f224b59c166575465d690e4f1089bbcb2d582e8fb88d7330137cd662724465
+[kuberserver1@kuberserver1 ~]$
+
+
+
+
+
+------------------------------------------------------
+------------------------------------------------------
+# After kubeadm init completes, it will output:
+# kubeadm join 192.168.122.10:6443 --token XXXXX --discovery-token-ca-cert-hash sha256:XXXXXXXX
+# SAVE THIS COMMAND - you will need it to join worker nodes
+
+# ============================================================================
+# STEP 7: Setup kubectl access (ONLY ON MASTER - run as non-root user)
+# ============================================================================
+
+# Create .kube directory
+mkdir -p $HOME/.kube
+
+# Copy admin config
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+
+# Fix permissions
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Verify kubectl works
+kubectl get nodes
+kubectl get pods -A
+
+# ============================================================================
+# STEP 8: Install Calico network plugin (ONLY ON MASTER)
+# ============================================================================
+
+# Install Calico operator
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml
+
+# Wait for tigera-operator to be ready (1-2 minutes)
+kubectl wait --for=condition=Established crd/installations.operator.tigera.io --timeout=300s
+
+# Create Calico installation
+kubectl apply -f - << 'CALICO'
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  calicoNetwork:
+    ipPools:
+    - blockSize: 26
+      cidr: 192.168.0.0/16
+      encapsulation: VXLan
+      natOutgoing: Enabled
+      nodeSelector: all()
+CALICO
+
+# Verify Calico is running
+kubectl get pods -n calico-system
+kubectl get pods -n calico-apiserver
+
+# ============================================================================
+# STEP 9: Join worker nodes to cluster (ONLY ON WORKERS)
+# ============================================================================
+# Use the kubeadm join command from STEP 6 output
+# Replace the token and discovery hash with values from your master output
+# Add the containerd CRI socket parameter
+
+sudo kubeadm join \
+  192.168.122.10:6443 \
+  --token XXXXX \
+  --discovery-token-ca-cert-hash sha256:XXXXXXXX \
+  --cri-socket=unix:///run/containerd/containerd.sock
+
+# ============================================================================
+# STEP 10: Verify cluster (ONLY ON MASTER)
+# ============================================================================
+
+# Check all nodes are Ready
+kubectl get nodes
+
+# Check all system pods are Running
+kubectl get pods -A
+
+# Check control plane components
+kubectl get pods -n kube-system
+
+# Check Calico networking
+kubectl get pods -n calico-system
+
+# Verify cluster info
+kubectl cluster-info
+
+# ============================================================================
+# EXPECTED RESULTS:
+# 1. All kernel modules and sysctl settings verified
+# 2. Firewalld disabled, hostnames resolving
+# 3. Containerd installed and running on all nodes
+# 4. Kubernetes components installed on all nodes
+# 5. kubeadm init completes successfully on master
+# 6. All control plane pods running
+# 7. kubeadm join commands complete on all workers
+# 8. All nodes show STATUS "Ready"
+# 9. All system pods in "Running" state
+# 10. Calico networking deployed and pods ready
+# ============================================================================
+
+
+--------------------------------------------------------
+--------------------------------------------------------
+# KUBERNETES INSTALLATION - CONTROL PLANE (k8master) and WORKERS
+
+# Run on ALL nodes first (control plane + all workers)
+
+# Add Kubernetes repository
+
+sudo bash -c 'cat > /etc/yum.repos.d/kubernetes.repo << EOF
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.31/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.31/rpm/repodata/repomd.xml.key
+EOF'
+
+# Install kubeadm, kubelet, kubectl
+sudo dnf install -y kubeadm kubelet kubectl
+
+# Enable kubelet service (do not start yet)
+sudo systemctl enable kubelet
+
+# Configure Podman for Kubernetes (cgroup driver)
+sudo bash -c 'mkdir -p /etc/containers && cat > /etc/containers/containers.conf << EOF
+[machine]
+cgroupfs = "systemd"
+
+[libpod]
+cgroup_manager = "systemd"
+EOF'
+
+# Restart Podman to apply configuration
+sudo systemctl restart podman
+
+# ============================================================================
+# ONLY ON CONTROL PLANE (k8master)
+# ============================================================================
+
+# Initialize Kubernetes control plane
+# Pod network CIDR for Calico networking
+sudo kubeadm init --pod-network-cidr=192.168.0.0/16 --cri-socket=unix:///run/podman/podman.sock
+
+# After kubeadm init completes, you will see kubeadm join command output
+# Save that command - you will need it to join worker nodes
+
+
+
+
+# Setup kubectl access for current user (run as non-root user)
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Verify control plane is running
+kubectl get nodes
+kubectl get pods -A
+
+# Install Calico network plugin
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml
+
+# Wait for tigera-operator to be ready (takes 1-2 minutes)
+kubectl wait --for=condition=Established crd/installations.operator.tigera.io --timeout=300s
+
+# Create Calico installation
+kubectl apply -f - << 'CALICO'
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  calicoNetwork:
+    ipPools:
+    - blockSize: 26
+      cidr: 192.168.0.0/16
+      encapsulation: VXLan
+      natOutgoing: Enabled
+      nodeSelector: all()
+CALICO
+
+# Verify Calico is running
+kubectl get pods -n calico-system
+kubectl get nodes
+
+# ============================================================================
+# ON EACH WORKER NODE (k8worker01, k8worker02, etc.)
+# ============================================================================
+
+# Use the kubeadm join command that was output from kubeadm init on control plane
+# It will look like this (replace with actual values from your control plane output):
+
+sudo kubeadm join 192.168.122.10:6443 --token XXXXX --discovery-token-ca-cert-hash sha256:XXXXXXXX --cri-socket=unix:///run/podman/podman.sock
+
+# After join completes, verify on control plane with:
+kubectl get nodes
+kubectl get pods -A
+
+# ============================================================================
+# VERIFICATION COMMANDS (run on control plane)
+# ============================================================================
+
+# Check all nodes are Ready
+kubectl get nodes
+
+# Check all system pods are Running
+kubectl get pods -A
+
+# Check control plane components
+kubectl get pods -n kube-system
+
+# Check Calico networking
+kubectl get pods -n calico-system
+
+# Verify cluster info
+kubectl cluster-info
+
+# ============================================================================
+# EXPECTED RESULTS:
+# 1. kubeadm init completes successfully on k8master
+# 2. Calico network plugin is deployed
+# 3. All nodes show STATUS "Ready"
+# 4. All system pods are in Running state
+# 5. kubeadm join commands complete successfully on all workers
+# ============================================================================

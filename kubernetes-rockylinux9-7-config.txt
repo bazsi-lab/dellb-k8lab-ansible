@@ -1,0 +1,43 @@
+CONTROL PLANE NODE:
+===================
+
+Check "Server"
+
+Additional software for Selected Environment (check these):
+
+* "Debugging Tools"
+* "Network Servers"
+* "Performance Tools"
+* "Remote Management for Linux"
+* "Container Management"
+* "Development Tools"
+* "Headless Management"
+* "Console Internet Tools"
+* "Security Tools"
+* "System Tools"
+
+* "Backup Client"
+
+
+WORKER NODE:
+============
+
+Check "Server"
+
+Additional software for Selected Environment (check these):
+
+* "Debugging Tools"
+* "Performance Tools"
+* "Remote Management for Linux"
+* "Console Internet Tools"
+* "Container Management"
+* "Development Tools"
+* "Headless Management"
+* "Security Tools"
+* "System Tools"
+
+
+
+
+
+

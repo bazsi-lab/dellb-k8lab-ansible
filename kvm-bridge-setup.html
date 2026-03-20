@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>k8lab — KVM Bridge Networking</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;600;800&display=swap');
+  :root {
+    --bg: #0d0f14; --surface: #141720; --border: #1e2330;
+    --accent: #00e5ff; --accent2: #7b61ff; --green: #39d98a;
+    --yellow: #ffd166; --red: #ff6b6b; --orange: #ff9f43;
+    --text: #c9d1e0; --muted: #556070; --heading: #eef1f7;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.6; padding:40px 24px; }
+  .page { max-width:1000px; margin:0 auto; }
+
+  header { border-bottom:1px solid var(--border); padding-bottom:24px; margin-bottom:32px; display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  .logo { font-family:'Syne',sans-serif; font-size:28px; font-weight:800; color:var(--heading); letter-spacing:-1px; }
+  .logo span { color:var(--accent); }
+  .meta { color:var(--muted); font-size:11px; text-align:right; }
+  .meta strong { color:var(--orange); }
+
+  .section-label { font-family:'Syne',sans-serif; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:2px; margin:28px 0 12px; display:flex; align-items:center; gap:10px; }
+  .section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  .grid { display:grid; gap:16px; }
+  .cols2 { grid-template-columns:1fr 1fr; }
+  .cols1 { grid-template-columns:1fr; }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .card-header { background:var(--border); padding:10px 16px; display:flex; align-items:center; gap:10px; }
+  .badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:3px; font-family:'Syne',sans-serif; letter-spacing:.5px; white-space:nowrap; color:#000; }
+  .badge.blue { background:var(--accent); }
+  .badge.green { background:var(--green); }
+  .badge.yellow { background:var(--yellow); }
+  .badge.orange { background:var(--orange); }
+  .badge.purple { background:var(--accent2); color:#fff; }
+  .badge.red { background:var(--red); }
+  .card-title { font-family:'Syne',sans-serif; font-size:13px; font-weight:600; color:var(--heading); }
+  .host-tag { margin-left:auto; font-size:10px; padding:2px 8px; border-radius:3px; font-family:'Syne',sans-serif; font-weight:600; }
+  .host-tag.b { background:rgba(255,159,67,.15); color:var(--orange); border:1px solid rgba(255,159,67,.3); }
+  .host-tag.c { background:rgba(0,229,255,.1); color:var(--accent); border:1px solid rgba(0,229,255,.25); }
+  .host-tag.both { background:rgba(123,97,255,.15); color:var(--accent2); border:1px solid rgba(123,97,255,.3); }
+
+  .card-body { padding:14px 16px; }
+  .lbl { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; margin-top:10px; }
+  .lbl:first-child { margin-top:0; }
+
+  .cmd { background:#0a0c10; border:1px solid var(--border); border-radius:5px; padding:8px 12px; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--green); white-space:pre; overflow-x:auto; }
+  .cmd .p { color:var(--muted); user-select:none; }
+  .cmd .f { color:var(--yellow); }
+  .cmd .v { color:var(--accent2); }
+  .cmd .u { color:var(--accent); }
+  .cmd .c { color:var(--muted); font-style:italic; }
+
+  .yaml { background:#0a0c10; border:1px solid var(--border); border-radius:5px; padding:10px 14px; font-size:12px; white-space:pre; overflow-x:auto; line-height:1.7; }
+  .yaml .k { color:var(--accent); }
+  .yaml .val { color:var(--green); }
+  .yaml .c { color:var(--muted); font-style:italic; }
+  .yaml .str { color:var(--yellow); }
+
+  .note { border-radius:0 5px 5px 0; padding:8px 12px; font-size:11px; color:var(--text); margin-top:10px; }
+  .note.info { background:rgba(0,229,255,.05); border-left:3px solid var(--accent); }
+  .note.warn { background:rgba(255,209,102,.05); border-left:3px solid var(--yellow); }
+  .note.ok   { background:rgba(57,217,138,.05);  border-left:3px solid var(--green); }
+  .note.danger { background:rgba(255,107,107,.05); border-left:3px solid var(--red); }
+
+  .ip-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:6px; }
+  .ip-table th { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:1px; padding:6px 10px; border-bottom:1px solid var(--border); text-align:left; }
+  .ip-table td { padding:6px 10px; border-bottom:1px solid rgba(30,35,48,.6); }
+  .ip-table tr:last-child td { border-bottom:none; }
+  .ip-table .host { color:var(--accent2); }
+  .ip-table .ip { color:var(--green); font-weight:600; }
+  .ip-table .role { color:var(--muted); }
+  .ip-table .tag-b { color:var(--orange); }
+  .ip-table .tag-c { color:var(--accent); }
+  .divider-row td { background:rgba(30,35,48,.5); color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:1px; padding:4px 10px; }
+
+  footer { margin-top:40px; padding-top:20px; border-top:1px solid var(--border); color:var(--muted); font-size:10px; display:flex; justify-content:space-between; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div>
+    <div class="logo">k8<span>lab</span></div>
+    <div style="color:var(--muted);font-size:11px;margin-top:4px;">KVM Bridge Networking — Replace NAT with br0</div>
+  </div>
+  <div class="meta">
+    dellb: <strong>eno1</strong> · 192.168.10.3<br>
+    dellc: <strong>enp0s31f6</strong> · 192.168.10.4<br>
+    Gateway: 192.168.10.1 (Mikrotik)
+  </div>
+</header>
+
+<!-- IP PLAN -->
+<div class="section-label">Full IP Plan</div>
+<div class="grid cols1">
+  <div class="card">
+    <div class="card-header">
+      <span class="badge blue">PLAN</span>
+      <span class="card-title">192.168.10.0/24 — Complete Address Map</span>
+    </div>
+    <div class="card-body">
+      <table class="ip-table">
+        <tr><th>Hostname</th><th>IP Address</th><th>Role</th><th>Host</th></tr>
+        <tr><td colspan="4" class="divider-row">Physical hosts</td></tr>
+        <tr><td class="host">—</td><td class="ip">192.168.10.1</td><td class="role">Mikrotik router / gateway</td><td>—</td></tr>
+        <tr><td class="host">dellb</td><td class="ip">192.168.10.3</td><td class="role">KVM bare-metal host</td><td class="tag-b">dellb</td></tr>
+        <tr><td class="host">dellc</td><td class="ip">192.168.10.4</td><td class="role">KVM bare-metal host (primary)</td><td class="tag-c">dellc</td></tr>
+        <tr><td colspan="4" class="divider-row">dellb cluster — .50 block</td></tr>
+        <tr><td class="host">k8client</td><td class="ip">192.168.10.50</td><td class="role">Ubuntu dev VM / Ansible control node</td><td class="tag-b">dellb</td></tr>
+        <tr><td class="host">master-01</td><td class="ip">192.168.10.51</td><td class="role">k8s control plane</td><td class="tag-b">dellb</td></tr>
+        <tr><td class="host">worker-01</td><td class="ip">192.168.10.52</td><td class="role">k8s worker</td><td class="tag-b">dellb</td></tr>
+        <tr><td class="host">worker-02</td><td class="ip">192.168.10.53</td><td class="role">k8s worker</td><td class="tag-b">dellb</td></tr>
+        <tr><td class="host">spare-01</td><td class="ip">192.168.10.54</td><td class="role">monitoring (Prometheus/Grafana)</td><td class="tag-b">dellb</td></tr>
+        <tr><td colspan="4" class="divider-row">dellc cluster — .60 block</td></tr>
+        <tr><td class="host">k8client</td><td class="ip">192.168.10.60</td><td class="role">Ubuntu dev VM / Ansible control node</td><td class="tag-c">dellc</td></tr>
+        <tr><td class="host">master-01</td><td class="ip">192.168.10.61</td><td class="role">k8s control plane</td><td class="tag-c">dellc</td></tr>
+        <tr><td class="host">worker-01</td><td class="ip">192.168.10.62</td><td class="role">k8s worker</td><td class="tag-c">dellc</td></tr>
+        <tr><td class="host">worker-02</td><td class="ip">192.168.10.63</td><td class="role">k8s worker</td><td class="tag-c">dellc</td></tr>
+        <tr><td class="host">spare-01</td><td class="ip">192.168.10.64</td><td class="role">monitoring (Prometheus/Grafana)</td><td class="tag-c">dellc</td></tr>
+        <tr><td colspan="4" class="divider-row">Reserved / free</td></tr>
+        <tr><td class="host">—</td><td class="ip">192.168.10.5 – .49</td><td class="role">free — other devices, future hosts</td><td>—</td></tr>
+        <tr><td class="host">—</td><td class="ip">192.168.10.150 – .253</td><td class="role">Mikrotik DHCP pool (untouched)</td><td>—</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- PHASE 1: NETPLAN BRIDGE -->
+<div class="section-label">Phase 1 — Create br0 Bridge (Netplan) on Each Host</div>
+
+<div class="grid cols2">
+
+  <!-- DELLB -->
+  <div class="card">
+    <div class="card-header">
+      <span class="badge orange">DELLB</span>
+      <span class="card-title">Netplan Bridge Config</span>
+      <span class="host-tag b">eno1 → br0</span>
+    </div>
+    <div class="card-body">
+      <div class="lbl">1. Backup existing netplan config</div>
+      <div class="cmd"><span class="p">$ </span>sudo cp /etc/netplan/*.yaml \
+  /etc/netplan/backup-original.yaml</div>
+
+      <div class="lbl">2. Find your current config file</div>
+      <div class="cmd"><span class="p">$ </span>ls /etc/netplan/</div>
+
+      <div class="lbl">3. Replace with bridge config</div>
+      <div class="cmd"><span class="p">$ </span>sudo nano /etc/netplan/<span class="v">01-netcfg.yaml</span></div>
+
+      <div class="lbl">Content (paste exactly):</div>
+      <div class="yaml"><span class="c"># dellb — br0 bridge over eno1</span>
+<span class="k">network:</span>
+  <span class="k">version:</span> <span class="val">2</span>
+  <span class="k">renderer:</span> <span class="val">networkd</span>
+  <span class="k">ethernets:</span>
+    <span class="k">eno1:</span>
+      <span class="k">dhcp4:</span> <span class="val">false</span>
+      <span class="k">dhcp6:</span> <span class="val">false</span>
+  <span class="k">bridges:</span>
+    <span class="k">br0:</span>
+      <span class="k">interfaces:</span> [<span class="val">eno1</span>]
+      <span class="k">addresses:</span>
+        - <span class="str">192.168.10.3/24</span>
+      <span class="k">routes:</span>
+        - <span class="k">to:</span> <span class="val">default</span>
+          <span class="k">via:</span> <span class="str">192.168.10.1</span>
+      <span class="k">nameservers:</span>
+        <span class="k">addresses:</span> [<span class="str">192.168.10.1</span>, <span class="str">8.8.8.8</span>]
+      <span class="k">parameters:</span>
+        <span class="k">stp:</span> <span class="val">false</span>
+        <span class="k">forward-delay:</span> <span class="val">0</span>
+      <span class="k">dhcp4:</span> <span class="val">false</span>
+      <span class="k">dhcp6:</span> <span class="val">false</span></div>
+
+      <div class="lbl">4. Apply (WARNING: SSH will drop briefly)</div>
+      <div class="cmd"><span class="p">$ </span>sudo netplan apply</div>
+
+      <div class="lbl">5. Verify bridge is up</div>
+      <div class="cmd"><span class="p">$ </span>ip -br addr show br0</div>
+      <div class="note ok">✓ Should show br0 UP with 192.168.10.3/24</div>
+    </div>
+  </div>
+
+  <!-- DELLC -->
+  <div class="card">
+    <div class="card-header">
+      <span class="badge blue">DELLC</span>
+      <span class="card-title">Netplan Bridge Config</span>
+      <span class="host-tag c">enp0s31f6 → br0</span>
+    </div>
+    <div class="card-body">
+      <div class="lbl">1. Backup existing netplan config</div>
+      <div class="cmd"><span class="p">$ </span>sudo cp /etc/netplan/*.yaml \
+  /etc/netplan/backup-original.yaml</div>
+
+      <div class="lbl">2. Find your current config file</div>
+      <div class="cmd"><span class="p">$ </span>ls /etc/netplan/</div>
+
+      <div class="lbl">3. Replace with bridge config</div>
+      <div class="cmd"><span class="p">$ </span>sudo nano /etc/netplan/<span class="v">01-netcfg.yaml</span></div>
+
+      <div class="lbl">Content (paste exactly):</div>
+      <div class="yaml"><span class="c"># dellc — br0 bridge over enp0s31f6</span>
+<span class="k">network:</span>
+  <span class="k">version:</span> <span class="val">2</span>
+  <span class="k">renderer:</span> <span class="val">networkd</span>
+  <span class="k">ethernets:</span>
+    <span class="k">enp0s31f6:</span>
+      <span class="k">dhcp4:</span> <span class="val">false</span>
+      <span class="k">dhcp6:</span> <span class="val">false</span>
+  <span class="k">bridges:</span>
+    <span class="k">br0:</span>
+      <span class="k">interfaces:</span> [<span class="val">enp0s31f6</span>]
+      <span class="k">addresses:</span>
+        - <span class="str">192.168.10.4/24</span>
+      <span class="k">routes:</span>
+        - <span class="k">to:</span> <span class="val">default</span>
+          <span class="k">via:</span> <span class="str">192.168.10.1</span>
+      <span class="k">nameservers:</span>
+        <span class="k">addresses:</span> [<span class="str">192.168.10.1</span>, <span class="str">8.8.8.8</span>]
+      <span class="k">parameters:</span>
+        <span class="k">stp:</span> <span class="val">false</span>
+        <span class="k">forward-delay:</span> <span class="val">0</span>
+      <span class="k">dhcp4:</span> <span class="val">false</span>
+      <span class="k">dhcp6:</span> <span class="val">false</span></div>
+
+      <div class="lbl">4. Apply (WARNING: SSH will drop briefly)</div>
+      <div class="cmd"><span class="p">$ </span>sudo netplan apply</div>
+
+      <div class="lbl">5. Verify bridge is up</div>
+      <div class="cmd"><span class="p">$ </span>ip -br addr show br0</div>
+      <div class="note ok">✓ Should show br0 UP with 192.168.10.4/24</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- PHASE 2: VIRT-MANAGER -->
+<div class="section-label">Phase 2 — Switch VMs from NAT to br0 (virt-manager or virsh)</div>
+
+<div class="grid cols2">
+  <div class="card">
+    <div class="card-header">
+      <span class="badge purple">GUI</span>
+      <span class="card-title">virt-manager method (each VM)</span>
+      <span class="host-tag both">both hosts</span>
+    </div>
+    <div class="card-body">
+      <div class="lbl">Steps</div>
+      <div style="color:var(--text);font-size:12px;line-height:1.9">
+        1. Open <strong style="color:var(--accent)">virt-manager</strong><br>
+        2. Right-click VM → <strong style="color:var(--accent)">Open</strong><br>
+        3. Click the <strong style="color:var(--accent)">ⓘ (Show hardware details)</strong> icon<br>
+        4. Select <strong style="color:var(--accent)">NIC</strong> in the left panel<br>
+        5. Change <em>Network source</em> from<br>
+        &nbsp;&nbsp;&nbsp;<code style="color:var(--red)">Virtual network 'default' (NAT)</code><br>
+        &nbsp;&nbsp;&nbsp;→ <code style="color:var(--green)">Bridge device: br0</code><br>
+        6. Click <strong style="color:var(--accent)">Apply</strong><br>
+        7. Repeat for all 5 VMs
+      </div>
+      <div class="note warn">⚠ VM must be shut off before changing NIC config.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="badge green">CLI</span>
+      <span class="card-title">virsh method (faster, scriptable)</span>
+      <span class="host-tag both">both hosts</span>
+    </div>
+    <div class="card-body">
+      <div class="lbl">Edit each VM's XML directly</div>
+      <div class="cmd"><span class="p">$ </span>virsh edit <span class="v">master-01</span></div>
+
+      <div class="lbl">Find this block in the XML:</div>
+      <div class="yaml"><span class="c">&lt;!-- BEFORE (NAT) --&gt;</span>
+&lt;<span class="k">interface</span> type=<span class="str">'network'</span>&gt;
+  &lt;<span class="k">source</span> network=<span class="str">'default'</span>/&gt;
+&lt;/<span class="k">interface</span>&gt;</div>
+
+      <div class="lbl">Replace with:</div>
+      <div class="yaml"><span class="c">&lt;!-- AFTER (bridge) --&gt;</span>
+&lt;<span class="k">interface</span> type=<span class="str">'bridge'</span>&gt;
+  &lt;<span class="k">source</span> bridge=<span class="str">'br0'</span>/&gt;
+  &lt;<span class="k">model</span> type=<span class="str">'virtio'</span>/&gt;
+&lt;/<span class="k">interface</span>&gt;</div>
+
+      <div class="lbl">Repeat for all VMs</div>
+      <div class="cmd"><span class="p">$ </span><span class="f">for</span> vm in k8client master-01 worker-01 worker-02 spare-01; <span class="f">do</span>
+  echo <span class="v">"=== $vm ==="</span>
+  virsh dumpxml $vm | grep -A3 <span class="v">'interface'</span>
+<span class="f">done</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- PHASE 3: STATIC IP IN VMs -->
+<div class="section-label">Phase 3 — Assign Static IPs Inside Each VM (Rocky Linux 9)</div>
+
+<div class="grid cols1">
+  <div class="card">
+    <div class="card-header">
+      <span class="badge yellow">ROCKY9</span>
+      <span class="card-title">nmcli — Set Static IP (run inside each VM via console)</span>
+      <span class="host-tag both">all VMs</span>
+    </div>
+    <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div>
+        <div class="lbl">Example: master-01 on dellb (192.168.10.51)</div>
+        <div class="cmd"><span class="c"># Find connection name first</span>
+<span class="p">$ </span>nmcli con show
+
+<span class="c"># Set static IP (replace IP and con-name)</span>
+<span class="p">$ </span>nmcli con mod <span class="v">"Wired connection 1"</span> \
+  ipv4.addresses <span class="v">192.168.10.51/24</span> \
+  ipv4.gateway   <span class="v">192.168.10.1</span> \
+  ipv4.dns       <span class="v">"192.168.10.1 8.8.8.8"</span> \
+  ipv4.method    manual
+
+<span class="c"># Apply</span>
+<span class="p">$ </span>nmcli con up <span class="v">"Wired connection 1"</span>
+
+<span class="c"># Verify</span>
+<span class="p">$ </span>ip a show eth0</div>
+        <div class="note info">ℹ Replace the IP with the correct one per VM. Same command works on all Rocky9 VMs.</div>
+      </div>
+      <div>
+        <div class="lbl">Quick reference — IP per VM</div>
+        <table class="ip-table">
+          <tr><th>VM</th><th>dellb</th><th>dellc</th></tr>
+          <tr><td class="host">k8client</td><td class="tag-b">.50</td><td class="tag-c">.60</td></tr>
+          <tr><td class="host">master-01</td><td class="tag-b">.51</td><td class="tag-c">.61</td></tr>
+          <tr><td class="host">worker-01</td><td class="tag-b">.52</td><td class="tag-c">.62</td></tr>
+          <tr><td class="host">worker-02</td><td class="tag-b">.53</td><td class="tag-c">.63</td></tr>
+          <tr><td class="host">spare-01</td><td class="tag-b">.54</td><td class="tag-c">.64</td></tr>
+        </table>
+        <div class="note warn" style="margin-top:10px">⚠ k8client is Ubuntu — use <code>sudo nano /etc/netplan/...</code> instead of nmcli. Same bridge config pattern as the host but with its own IP.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PHASE 4: VERIFY -->
+<div class="section-label">Phase 4 — Verify Cross-Host Connectivity</div>
+
+<div class="grid cols1">
+  <div class="card">
+    <div class="card-header">
+      <span class="badge green">✓</span>
+      <span class="card-title">Connectivity Tests — Do These After All VMs Are Reconfigured</span>
+    </div>
+    <div class="card-body" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <div>
+        <div class="lbl">From dellb host → dellc VMs</div>
+        <div class="cmd"><span class="p">$ </span>ping -c3 192.168.10.61
+<span class="p">$ </span>ping -c3 192.168.10.62</div>
+        <div class="note ok" style="margin-top:8px">✓ dellb can reach dellc cluster</div>
+      </div>
+      <div>
+        <div class="lbl">From VM (dellb) → VM (dellc)</div>
+        <div class="cmd"><span class="c"># SSH into master-01 on dellb</span>
+<span class="p">$ </span>ssh 192.168.10.51
+<span class="c"># Then ping dellc worker</span>
+<span class="p">$ </span>ping -c3 192.168.10.62</div>
+        <div class="note ok" style="margin-top:8px">✓ Cross-host VM reach confirmed</div>
+      </div>
+      <div>
+        <div class="lbl">From k8client → all nodes</div>
+        <div class="cmd"><span class="c"># From k8client VM (ansible ctrl)</span>
+<span class="p">$ </span>ansible all \
+  -i inventory.ini \
+  -m ping</div>
+        <div class="note ok" style="margin-top:8px">✓ Ansible can reach all VMs on both hosts</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>k8lab · KVM Bridge Setup · dellb eno1 / dellc enp0s31f6 → br0</span>
+  <span>Next: snapshots → base.yml → k8s-prereq.yml</span>
+</footer>
+
+</div>
+</body>
+</html>

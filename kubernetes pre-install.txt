@@ -1,0 +1,201 @@
+# ============================================================================
+# KUBERNETES PRE-INSTALL SETUP - Run on EACH node
+# ============================================================================
+
+# Set persistent hostname
+# For control plane use: k8master
+# For workers use: k8worker01, k8worker02, etc.
+sudo hostnamectl set-hostname "k8master"
+
+# Verify hostname
+hostnamectl --static
+hostname -I
+
+# Stop Docker service
+sudo systemctl stop docker
+
+# Disable Docker from auto-start
+sudo systemctl disable docker
+
+# Verify Docker is disabled
+sudo systemctl is-enabled docker
+
+# Verify Podman is working
+sudo podman --version
+sudo systemctl status podman
+
+# Check SELinux mode (should be Permissive)
+sudo getenforce
+
+# Check swap is disabled (should be 0)
+free -m
+
+# Check kernel modules are loaded
+lsmod | grep overlay
+lsmod | grep br_netfilter
+
+# Check sysctl settings (all should be 1)
+cat /proc/sys/net/bridge/bridge-nf-call-iptables
+cat /proc/sys/net/bridge/bridge-nf-call-ip6tables
+cat /proc/sys/net/ipv4/ip_forward
+
+# Check SSH is running
+sudo systemctl status sshd
+
+# Test Podman with hello-world
+sudo podman run --rm hello-world
+
+# ============================================================================
+# EXPECTED RESULTS:
+# Hostname: k8master (or k8worker01, etc.)
+# SELinux: Permissive
+# Swap: 0
+# Kernel modules: overlay and br_netfilter present
+# Network settings: 1 for all three
+# Podman: runs hello-world successfully
+# ============================================================================
+
+
+# ============================================================================
+# FIX: Multiple issues blocking kubeadm init
+# Run on ALL nodes (especially before init on master)
+# ============================================================================
+
+# ISSUE 1: Missing conntrack package (FATAL)
+sudo dnf install -y conntrack-tools
+
+# ISSUE 2: Disable firewalld (lab environment - easier than managing rules)
+sudo systemctl stop firewalld
+sudo systemctl disable firewalld
+
+# Verify firewalld is stopped
+sudo systemctl status firewalld
+
+# ISSUE 3: Fix hostname resolution
+# Add all nodes to /etc/hosts (replace IPs/hostnames with your actual values)
+sudo bash -c 'cat >> /etc/hosts << EOF
+192.168.122.101 kuberserver1
+192.168.122.111 k8worker011
+192.168.122.122 k8worker022
+192.168.122.133 k8worker033
+192.168.122.144 k8worker044
+192.168.122.155 k8worker055
+192.168.122.166 k8worker066
+EOF'
+
+# Verify hostname resolution
+ping -c 1 kuberserver1
+ping -c 1 k8master
+hostname -I
+hostname -f
+
+# ISSUE 4: Fix Podman CRI socket issue
+# Restart Podman service
+sudo systemctl restart podman
+
+# Wait a moment for socket to be ready
+sleep 3
+
+# Verify Podman socket exists
+ls -la /run/podman/podman.sock
+
+# Test Podman is responding
+sudo podman ps
+
+# ============================================================================
+# After all fixes, retry kubeadm init on MASTER ONLY
+# ============================================================================
+
+sudo kubeadm init --pod-network-cidr=192.168.0.0/16 --cri-socket=unix:///run/podman/podman.sock
+
+# ============================================================================
+# EXPECTED RESULTS:
+# All nodes: conntrack installed, firewalld disabled, hostnames resolve
+# Master: kubeadm init completes and outputs kubeadm join command
+# ============================================================================
+
+
+# ============================================================================
+# KUBERNETES CONTAINER RUNTIME INSTALLATION (VERIFIED FROM OFFICIAL DOCS)
+# Rocky Linux 9.7 - Run on ALL nodes
+# ============================================================================
+# Sources: Kubernetes official docs, Rocky Linux docs, official containerd docs
+# Verified: March 2026
+# ============================================================================
+
+# OPTION 1: containerd (RECOMMENDED - Production standard)
+# ============================================================================
+
+# STEP 1: Add Docker CE repository (containerd is available here for Rocky)
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+# STEP 2: Install containerd
+sudo dnf install -y containerd.io
+
+# STEP 3: Create containerd config directory
+sudo mkdir -p /etc/containerd
+
+# STEP 4: Generate default containerd configuration
+sudo containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
+
+# STEP 5: Configure containerd to use systemd cgroup driver (required for kubeadm)
+
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+# Verify the change
+grep SystemdCgroup /etc/containerd/config.toml
+
+# STEP 6: Enable and start containerd
+sudo systemctl daemon-reload
+sudo systemctl enable containerd
+sudo systemctl start containerd
+
+# STEP 7: Verify containerd is running
+sudo systemctl status containerd
+containerd --version
+
+# ============================================================================
+# OPTION 2: CRI-O (Alternative - More lightweight, Kubernetes-native)
+# ============================================================================
+# Run ONLY if you prefer CRI-O over containerd
+# Skip if you used Option 1
+
+# STEP 1: Add CRI-O repository for Rocky/RHEL
+export CRIO_VERSION=1.31
+sudo bash -c 'cat > /etc/yum.repos.d/crio.repo << EOF
+[crio]
+name=CRI-O
+baseurl=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v\${CRIO_VERSION}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v\${CRIO_VERSION}/rpm/repodata/repomd.xml.key
+EOF'
+
+# STEP 2: Install CRI-O
+sudo dnf install -y cri-o cri-tools
+
+# STEP 3: Start and enable CRI-O
+sudo systemctl daemon-reload
+sudo systemctl enable crio
+sudo systemctl start crio
+
+# STEP 4: Verify CRI-O is running
+sudo systemctl status crio
+crio --version
+
+# ============================================================================
+# VERIFICATION (choose based on which runtime you installed)
+# ============================================================================
+
+# For containerd:
+sudo ctr version
+sudo ctr images ls
+
+# For CRI-O:
+sudo crictl version
+sudo crictl images
+
+# ============================================================================
+# NEXT STEP: Install Kubernetes components
+# After successful verification above, proceed with kubeadm/kubelet/kubectl install
+# ============================================================================

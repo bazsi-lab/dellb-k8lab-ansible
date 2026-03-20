@@ -1,0 +1,314 @@
+
+
+# add user to sudo
+
+su -
+visudo
+username ALL=(ALL) NOPASSWD:ALL
+vi
+
+# update system
+
+sudo dnf update
+
+sudo apt update && sudo apt upgrade -y
+sudo apt autoremove -y && sudo apt autoclean
+sudo reboot
+
+# install epel 
+
+sudo dnf install epel-release
+
+sudo apt install -y \
+  curl wget git vim htop tree \
+  net-tools iputils-ping \
+  software-properties-common \
+  apt-transport-https ca-certificates \
+  gnupg lsb-release unzip
+
+# set hungarian keyboard layout
+
+localectl list-keymaps
+setkeymap hu
+sudo loadkeys hu
+
+# or if the previous not work
+
+sudo nano /etc/vconsole.conf
+KEYMAP=hu
+
+# change username if needed
+
+cat /etc/passwd
+sudo usermod -l oldname newname
+
+# Set hostname
+hostnamectl set-hostname master-01
+
+# disable swap, for kubernetes is mandatory
+
+sudo swapoff -a
+
+# Permanent: comment out swap lines in fstab
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
+
+# Verify no swap
+free -m
+
+# load required extra kernel modules for Kubernetes
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+sudo dnf install kernel-modules-extra
+
+# Make permanent
+sudo tee /etc/modules-load.d/kubernetes.conf > /dev/null <<EOF
+overlay
+br_netfilter
+EOF
+
+--------------------------------------------------------
+# SSH Connectivity
+
+# Ubuntu / Debian
+sudo apt install -y openssh-client openssh-server
+
+# Rocky Linux 9 / RHEL / AlmaLinux
+sudo dnf install -y openssh-clients openssh-server
+
+# Ubuntu
+sudo systemctl enable --now ssh
+
+# Rocky Linux 9 / RHEL
+sudo systemctl enable --now sshd
+
+# Ubuntu
+sudo systemctl status ssh
+
+# Rocky Linux 9 / RHEL
+sudo systemctl status sshd
+
+# generate named ed25519 keypair
+
+ssh-keygen -t ed25519 -C "k8lab" -f ~/.ssh/lab_key
+
+~/.ssh/lab_key        ← private key (never share this)
+~/.ssh/lab_key.pub    ← public key  (this goes to every VM)
+
+# verify generated keys
+
+ls -la ~/.ssh/lab_key*
+
+# distribute the public keys
+ssh-copy-id -i ~/.ssh/lab_key.pub adminuser@192.168.10.51
+ssh-copy-id -i ~/.ssh/lab_key.pub adminuser@192.168.10.52
+ssh-copy-id -i ~/.ssh/lab_key.pub adminuser@192.168.10.53
+ssh-copy-id -i ~/.ssh/lab_key.pub adminuser@192.168.10.54
+
+# Optional- SSH Client Config
+
+Host master-01
+    HostName 192.168.10.51
+    User adminuser
+    IdentityFile ~/.ssh/lab_key
+
+Host worker-01
+    HostName 192.168.10.52
+    User adminuser
+    IdentityFile ~/.ssh/lab_key
+
+Host worker-02
+    HostName 192.168.10.53
+    User adminuser
+    IdentityFile ~/.ssh/lab_key
+
+Host spare-01
+    HostName 192.168.10.54
+    User adminuser
+    IdentityFile ~/.ssh/lab_key
+	
+ssh master-01
+
+# Hardenning SSH
+
+# edit on each vm
+
+sudo vim /etc/ssh/sshd_config
+
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Ubuntu
+sudo systemctl restart ssh
+
+# Rocky Linux 9 / RHEL
+sudo systemctl restart sshd
+
+--------------------------------------------------------
+# set up static ip addr for lab
+
+# get the current ethernet interface name
+
+nmcli device status
+
+
+# set fixed ip for each VM
+
+sudo nmcli con modify "Wired connection 1" \
+  ipv4.method manual \
+  ipv4.addresses "192.168.122.10/24" \
+  ipv4.gateway "192.168.122.1" \
+  ipv4.dns "8.8.8.8,8.8.4.4"
+
+# apply changes
+
+sudo nmcli con down "Wired connection 1"
+sudo nmcli con up "Wired connection 1"
+
+# verify, if necessay delete the duplicated ip addr
+
+nmcli device show
+ip addr show
+sudo ip addr del <IP-ADRESSE/PREFIXLÃ„NGE> dev <INTERFACE>
+
+-----------------------------------------------------------
+# disable SELinux
+
+# check current status
+
+sudo getenforce 0
+
+# set to permission mode - use just for isolated lab
+
+sudo setenforce 0 
+
+# make it permament, edit config, requires reboot to fully apply
+
+sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+
+# Verify
+
+sudo getenforce 
+
+----------------------------------------------------
+# install ansible
+
+# Add official Ansible PPA (latest stable)
+
+sudo add-apt-repository --yes ppa:ansible/ansible
+sudo apt update
+sudo apt install -y ansible
+
+# Verify
+ansible --version
+
+# Create project directory
+
+mkdir -p ~/k8lab/ansible
+cd ~/k8lab/ansible
+
+# k8lab inventory, Create ~/k8lab/ansible/inventory.ini:
+
+[masters]
+master-01 ansible_host=192.168.10.51
+
+[workers]
+worker-01 ansible_host=192.168.10.52
+worker-02 ansible_host=192.168.10.53
+
+[spare]
+spare-01  ansible_host=192.168.10.54
+
+[all:vars]
+ansible_user=adminuser
+ansible_ssh_private_key_file=~/.ssh/lab_key
+
+
+#  test ansible connectivity
+
+ansible all -i inventory.ini -m ping
+
+# check add-hoc hostname on all nodes:
+
+ansible all -i inventory.ini -m command -a "hostname -f"
+
+ad-hoc check uptime:
+
+ansible all -i inventory.ini -m command -a "uptime"
+
+------------------------------------------------------
+
+# add vscodium 
+
+# Add GPG key
+wget -qO - \
+  https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/raw/master/pub.gpg \
+  | gpg --dearmor \
+  | sudo dd of=/usr/share/keyrings/vscodium-archive-keyring.gpg
+
+# Add repo
+echo 'deb [ signed-by=/usr/share/keyrings/vscodium-archive-keyring.gpg ] https://download.vscodium.com/debs vscodium main' \
+  | sudo tee /etc/apt/sources.list.d/vscodium.list
+
+# Install
+sudo apt update && sudo apt install -y codium
+
+
+# install extensions
+
+codium --install-extension redhat.ansible
+codium --install-extension ms-kubernetes-tools.vscode-kubernetes-tools
+codium --install-extension ms-azuretools.vscode-docker
+codium --install-extension hashicorp.terraform
+codium --install-extension eamodio.gitlens
+
+--------------------------------------------------------
+
+# git config
+
+# check git version
+
+git -version
+
+# configure git
+
+git config --global user.name  "Your Name"
+git config --global user.email "you@example.com"
+git config --global init.defaultBranch main
+git config --global core.editor vim
+
+# init a repo, but use groot-dellb-k8client
+
+cd ~/k8lab
+git init
+echo ".retry"   >> .gitignore
+echo "*.log"    >> .gitignore
+echo "secrets/" >> .gitignore
+git add .
+git commit -m "init: k8lab ansible project"
+
+
+
+--------------------------------------------------
+
+# create vm snapshot, VMs to snapshot: k8client, master-01, worker-01, worker-02, spare-01
+
+virsh snapshot-create-as \
+  --domain master-01 \
+  --name "clean-install" \
+  --description "Rocky9 minimal, pre-ansible" \
+  --atomic
+
+# list vm snapshots
+
+virsh snapshot-list master-01
+
+#  revert snapshot if needed
+
+virsh snapshot-revert master-01 clean-install
+
+
+/run/flatpak/doc/f9d06925/k8vm-base-config.txt

@@ -1,0 +1,30 @@
+# ============================================================================
+# FIX: Load br_netfilter kernel module and apply sysctl settings
+# Run on ALL nodes
+# ============================================================================
+
+# Load br_netfilter kernel module (required for bridge iptables)
+sudo modprobe br_netfilter
+
+# Verify module is loaded
+lsmod | grep br_netfilter
+
+# Create/update sysctl configuration for Kubernetes
+sudo bash -c 'cat > /etc/sysctl.d/kubernetes.conf << EOF
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF'
+
+# Apply sysctl settings immediately
+sudo sysctl --system
+
+# Verify the settings are now present and set to 1
+cat /proc/sys/net/bridge/bridge-nf-call-iptables
+cat /proc/sys/net/bridge/bridge-nf-call-ip6tables
+cat /proc/sys/net/ipv4/ip_forward
+
+# ============================================================================
+# EXPECTED RESULTS:
+# All three commands should output: 1
+# ============================================================================
