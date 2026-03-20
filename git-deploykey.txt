@@ -1,0 +1,106 @@
+
+
+# git - using multiple deploy keys
+
+The key is the Host alias. You define a unique Host alias for each repository you want to manage with a specific SSH key. This alias is used in place of the full hostname (github.com) in your Git remote URLs.
+Here's an updated example to clarify:
+          Copy
+          Run
+          # Repo 1 - uses a specific key
+Host github-repo1
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_rsa_repo1
+
+git remote set-url origin git@github-repo1:yourusername/repo1.git
+
+
+# generate the desired ssh-keys for the repos
+
+ssh-keygen -a 100 -t ed25519 -f ~/.ssh/id_ed25519_gitaccount000_gitrepo-000 -C "this is for gitrepo000 in the gitaccount gitaccount000 to use"
+
+# create a new entry in password manager, record all related data:
+- pcname gitaccount reponame
+- passphrase
+# save all of this
+# enter passphrase
+# copy public key to gitrepo000 on gitaccount000
+
+cat ~/.ssh/id_ed25519_gitaccount000_gitrepo-000.public
+
+# open ssh-config to add the new entry
+
+sudo nano ~/.ssh/config
+
+Host github.com-gitaccount000_gitrepo-000
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_gitaccount000_gitrepo-000.pub
+  IdentitesOnly yes
+
+# navigate to the local folder, where the desired repo cloned
+
+cd /groot/desired-repo
+
+# set the new origin-url
+
+git remote set-url origin git@github.com-bazsi-gitaccount000_gitrepo-000:bazsi-lab/gitaccount000_gitrepo-000.git
+
+# test connection
+
+ssh -T git@<alias>
+
+# verify
+
+git remote -v
+
+# To clone a new repo with the right key, just use the updated URL:
+
+git clone git@github-repo1:yourusername/repo1.git
+
+
+
+---------------------------------------------------------------
+
+# Cheat Sheet for SSH Host Aliases and Corresponding Git URLs
+
+# 1. Host alias: github-repo2-is-a-fridge
+#    Must match in the SSH config Host field and in the Git remote URL
+#    SSH Config:
+Host github-repo2-is-a-fridge
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_rsa_fridge_key
+
+#    Git remote URL:
+git remote set-url origin git@github-repo2-is-a-fridge:yourusername/repo2.git
+
+# ------------------------------------------------------------
+
+# 2. Host alias: github-repo3-is-a-spaceship
+#    Must match in the SSH config Host field and in the Git remote URL
+#    SSH Config:
+Host github-repo3-is-a-spaceship
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_rsa_spaceship_key
+
+#    Git remote URL:
+git remote set-url origin git@github-repo3-is-a-spaceship:yourusername/repo3.git
+
+# ------------------------------------------------------------
+
+# 3. Host alias: github-repo4-is-a-time-machine
+#    Must match in the SSH config Host field and in the Git remote URL
+#    SSH Config:
+Host github-repo4-is-a-time-machine
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_rsa_time_machine_key
+
+#    Git remote URL:
+git remote set-url origin git@github-repo4-is-a-time-machine:yourusername/repo4.git
+
+
+
+
